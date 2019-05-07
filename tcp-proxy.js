@@ -8,7 +8,7 @@ module.exports.createProxy = function(proxyPort,
 };
 
 function uniqueKey(socket) {
-    var key = socket.remoteAddress + ":" + socket.remotePort;
+    var key = socket.remoteAddress;// + ":" + socket.remotePort;
     return key;
 }
 
@@ -27,6 +27,7 @@ function TcpProxy(proxyPort, serviceHost, servicePort, options) {
     this.serviceHosts = parse(serviceHost);
     this.servicePorts = parse(servicePort);
     this.serviceHostIndex = -1;
+    this.hashedServer = {};
     if (options === undefined) {
         this.options = {quiet: false};
     } else {
@@ -65,8 +66,10 @@ TcpProxy.prototype.createListener = function() {
 TcpProxy.prototype.handleClient = function(proxySocket) {
     var self = this;
     var key = uniqueKey(proxySocket);
+    console.log(`#key:${key}`);
     self.proxySockets[key] = proxySocket;
     var context = {
+        key: key,
         buffers: [],
         connected: false,
         proxySocket: proxySocket
@@ -90,7 +93,8 @@ TcpProxy.prototype.handleClient = function(proxySocket) {
 
 TcpProxy.prototype.createServiceSocket = function(context) {
     var self = this;
-    var i = self.getServiceHostIndex();
+    var i = self.getServiceHostIndex(context.key);
+    console.log(`Idx:${i}`);
     if (self.options.tls === "both") {
         context.serviceSocket = tls.connect(self.servicePorts[i],
             self.serviceHosts[i], self.serviceTlsOptions, function() {
@@ -114,13 +118,49 @@ TcpProxy.prototype.createServiceSocket = function(context) {
     });
 };
 
-TcpProxy.prototype.getServiceHostIndex = function() {
-    this.serviceHostIndex++;
-    if (this.serviceHostIndex == this.serviceHosts.length) {
+TcpProxy.prototype.getServiceHostIndex = function(key) {
+    var self = this;
+    var idx = self.getHashedHostIndex(key);
+    if(idx != -1) {
+        return idx;
+    } else {
+      this.serviceHostIndex++;
+      if (this.serviceHostIndex == this.serviceHosts.length) {
         this.serviceHostIndex = 0;
+        this.releaseTimeoutHash();
+      }
+      this.setHashedHostIndex(key, this.serviceHostIndex);
+      return this.serviceHostIndex;
     }
-    return this.serviceHostIndex;
 };
+
+TcpProxy.prototype.releaseTimeoutHash = function() {
+    var time = Date.now();
+    for(var key in this.hashedServer) {
+        if(time - this.hashedServer[key].t > this.options.maxHashTime) {
+            console.log(`#Release ${key}`);
+            delete this.hashedServer[key];
+        }
+    }
+}
+
+TcpProxy.prototype.setHashedHostIndex = function(key, idx) {
+  console.log(`#Hash ${key} on Server ${idx}`);
+  // TODO for TEST only
+  if(key != '::ffff:10.110.40.81') {
+    this.hashedServer[key] = {i: idx, t: Date.now()};
+  }
+}
+
+TcpProxy.prototype.getHashedHostIndex = function(key) {
+    var server = this.hashedServer[key];
+    if(server != null) {
+      server.t = Date.now();
+      console.log(`#Found Server:${server.t}`);
+      return server.i;
+    }
+    return -1;
+}
 
 TcpProxy.prototype.writeBuffer = function(context) {
     context.connected = true;

@@ -24,6 +24,7 @@ argv
         require.resolve("./cert.pfx"))
     .option("-a, --passphrase [value]",
         "Passphrase to access private key file", "abcd")
+  .option("-m --maxHashTime [value]", "Max hash time, auto clean on timeout", 600000)
     .parse(process.argv);
 
 var options = {
@@ -32,7 +33,8 @@ var options = {
     tls: argv.tls,
     rejectUnauthorized: argv.rejectUnauthorized !== "false",
     pfx: argv.pfx,
-    passphrase: argv.passphrase
+    passphrase: argv.passphrase,
+    maxHashTime: argv.maxHashTime
 };
 
 if (!argv.proxyPort || !argv.serviceHost || !argv.servicePort) {
